@@ -299,8 +299,9 @@ ggplot()+
 
 #Plot of Excess Water 
 ggplot()+
-  geom_line(data=TopSlope,aes(x=date, y=Excess, colour ="TopSlope 15%"), size=1) +
+  geom_line(data=TopSlope,aes(x=date, y=Excess, colour ="TopSlope 15%"), size=1.5) +
   geom_line(data=MidSlope,aes(x=date, y=Excess, colour ="MidSlope 25%"), size=1) +
-  geom_line(data=BotSlope,aes(x=date, y=Excess, colour ="BotSlope 5%"), size=1)+
+  geom_line(data=BotSlope,aes(x=date, y=Excess, colour ="BotSlope 5%"), size=0.5)+
   scale_y_continuous(name = "Excess (mm)",) +
-  scale_x_continuous(name = "Date")
+  scale_x_continuous(name = "Date")+
+  ggtitle(myflowgage$gagename)
