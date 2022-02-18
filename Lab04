@@ -1,0 +1,306 @@
+# Cleaning up
+options(repos ="http://cran.us.r-project.org")  # required to get latest libs
+objects()
+rm(list=objects())
+setwd("~")
+dir.create("~/Lab04")
+setwd("~/Lab04/")
+
+# Functions for the Thornthwaite-Mather
+#
+# 3 Functions to calculate SWE and excess when soil is drying, 
+#   wetting, and wetting above capacity
+#
+soildrying<-function(AWprev,dP,AWC){
+  AW<-AWprev*exp(dP/AWC)
+  excess<-0.0
+  c(AW,excess)
+}
+
+soil_wetting_above_capacity<-function(AWprev,dP,AWC){
+  AW<-AWC
+  excess<-AWprev+dP-AWC
+  c(AW,excess)
+}
+
+soilwetting<-function(AWprev,dP,AWC){
+  AW<-AWprev+dP
+  excess<-0.0
+  c(AW,excess)
+}
+browseURL("https://github.com/vtdrfuka/BSE5304_2022")
+url="https://raw.githubusercontent.com/vtdrfuka/BSE5304_2022/main/Lab04.R"
+download.file(url,"Lab04.R")
+source("https://raw.githubusercontent.com/vtdrfuka/BSE5304_2022/main/functions/TMWBmodel.R")
+
+url="https://websoilsurvey.sc.egov.usda.gov/DSD/Download/AOI/11kn1d50qs1mnmylmvfzfall/wss_aoi_2022-02-17_21-32-01.zip"
+download.file(url,"mysoil.zip")
+unzip("mysoil.zip")
+list.files()
+list.files(pattern = "wss")
+
+list.files("wss_aoi_2021-02-17_21-32-01/spatial/",pattern = "shp")
+list.files(paste0(list.files(pattern="wss"),"/spatial/"))
+# Note you will need to replace the ?? with the values from your soils directory
+list.files("wss_aoi_2021-02-17_21-32-01/tabular/")
+
+# Installing the packages we will play with today
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(elevatr,soilDB,rgdal,raster,ggplot2)
+# https://cran.r-project.org/web/packages/elevatr/elevatr.pdf
+# https://cran.r-project.org/web/packages/raster/raster.pdf
+# https://cran.r-project.org/web/packages/soilDB/soilDB.pdf
+# https://cran.r-project.org/web/packages/rgdal/rgdal.pdf
+
+# From previous weeks
+pacman::p_load(EcoHydRology,rnoaa,curl,httr)
+# use the function to get data from USGS 
+# MISSION CREEK NEAR TULALIP, WA
+myflowgage_id="12157250"
+myflowgage=get_usgs_gage(myflowgage_id,begin_date = "2015-01-01",end_date = "2022-03-01")
+# Note that flow returned is in m3/day, but we want mm/day for the basin
+myflowgage$flowdata$Qmm = myflowgage$flowdata$flow/myflowgage$area/10^3
+
+
+mystream=subset(streams,gnis_id=="12157250")
+plot(mystream,col="red")
+# We now use the bounding box from this stream segment to access 
+# the soil data using the soilDB package
+
+c(mystream@bbox)
+# What is this returning? Why do we care?
+mybbox=c(mystream@bbox)
+# This needs to be completed based on your download
+mysoil=readOGR("wss_aoi_2022-02-17_21-02-15/spatial/soilmu_a_aoi.shp")    
+# Explore the mysoil dataset which is returned
+head(mysoil@data)
+class(mysoil)
+mysoil@
+  
+plot(mysoil)
+# To understand where you are now, overlay Lick Run stream
+lines(mystream,col="red")
+
+# First associate mukey with cokey from component
+unique(mysoil$MUKEY)
+?SDA_query
+mysoil$mukey=mysoil$MUKEY  # or rename the column
+mukey_statement = format_SQL_in_statement(unique(mysoil$mukey))
+print(mukey_statement)
+q_mu2co = paste("SELECT mukey,cokey FROM component WHERE mukey IN ", mukey_statement, sep="")
+print(q_mu2co)
+mu2co = SDA_query(q_mu2co)
+head(mu2co)
+summary(mu2co)
+
+# Second associate cokey with ksat_r,awc_r,hzdepb_r from chorizon
+cokey_statement = format_SQL_in_statement(unique(mu2co$cokey))
+q_co2ch = paste("SELECT cokey,ksat_r,awc_r,hzdepb_r  FROM chorizon WHERE cokey IN ", cokey_statement, sep="")
+print(q_co2ch)
+co2ch = SDA_query(q_co2ch)
+# Last, bring them back together, and aggregate based on max values
+# of ksat_r,awc_r, and hzdepb_r
+mu2ch=merge(mu2co,co2ch)
+View(mu2ch)
+summary(mu2ch)
+mu2chmax=aggregate(mu2ch,list(mu2ch$mukey),max)
+summary(mu2chmax)
+
+proj4_ll = "+proj=longlat"
+proj4string(mysoil) = proj4_ll
+mydem=get_elev_raster(locations=mysoil, 
+                        z = 11, prj =proj4string(mysoil) ,
+                        src ="aws",clip="bbox",expand = 0.01)
+plot(mydem)
+lines(mysoil,col="black")
+lines(mystream,col="red")
+class(mydem)
+mydem@crs
+mydem@ncols
+res(mydem)   # Can you figure out the resolution in meters? 
+summary(terrain(mydem, opt='slope',unit = "degrees"))
+# What is this 'slope'? Use the man page for the terrain() function to answer
+plot(terrain(mydem, opt='TPI',unit = "degrees"))
+# What is this 'TPI'? 
+summary(terrain(mydem, opt='TRI',unit = "degrees"))
+plot(terrain(mydem, opt='TRI',unit = "degrees"))
+# What is this 'TRI'? 
+lines(mysoil,col="black")
+lines(mystream,col="red")
+
+stns=meteo_distance(
+  station_data=ghcnd_stations(),
+  lat=myflowgage$declat,
+  long=myflowgage$declon,
+  units = "deg",
+  radius = 30,
+  limit = NULL
+)
+# We are looking for stations with elements that have PRCP, TMAX and TMIN 
+# and current data (i.e. Year 2021). 
+WXStn=stns[stns$element=="TMIN"&stns$last_year>=2021,]$id[2]
+WXData=meteo_pull_monitors(
+  monitors=WXStn,
+  keep_flags = FALSE,
+  date_min = "2016-01-01",
+  date_max = NULL,
+  var = c("TMAX","TMIN","PRCP") 
+)
+summary(WXData)  #
+plot(WXData$date,WXData$prcp)
+
+# Create an aligned modeldata data frame to build our model in
+modeldata=merge(WXData,myflowgage$flowdata,by.x="date",by.y="mdate")
+summary(modeldata)  #
+modeldata$MaxTemp=modeldata$tmax/10 # Converting to C
+modeldata$MinTemp=modeldata$tmin/10 # Converting to C
+modeldata$P=modeldata$prcp/10 # Converting to mm
+# View(modeldata)  
+# Compare your precipitation to the flow out of your basin
+mean(modeldata$Qmm)
+mean(modeldata$P)
+modeldata$P[is.na(modeldata$P)]=0
+modeldata$MinTemp[is.na(modeldata$MinTemp)]=0
+modeldata$MaxTemp[is.na(modeldata$MaxTemp)]=
+modeldata$MinTemp[is.na(modeldata$MaxTemp)] +1
+modeldata$MaxTemp[modeldata$MaxTemp<=modeldata$MinTemp]=
+modeldata$MinTemp[modeldata$MaxTemp<=modeldata$MinTemp]+1
+modeldata$AvgTemp=(modeldata$MaxTemp+modeldata$MaxTemp)/2.0
+
+summary(modeldata)
+modeldata[is.na(modeldata)]=0 # A Quick BUT sloppy removal of NAs
+TMWB=modeldata
+
+# For a simple spatial model, use TMWB, to initialize 3 
+# slope components for Top, Mid, and Bottom of the hillside. 
+TopSlope=TMWB
+MidSlope=TMWB
+BotSlope=TMWB
+
+TMWBModel=function(fres=0.3,SFTemp=0,bmlt6=2.5,bmlt12=1,tlag=0.5,awc=200){
+  print(fcres)
+}
+TMWBModel()
+# notice that there is an Energy Balance based Snow Accumulation 
+# and Melt model in the EcoHydRology package.
+attach(TMWB)
+SNO_Energy=SnowMelt(date, P, MaxTemp-3, MinTemp-3, myflowgage$declat, 
+                      slope = 0, aspect = 0, tempHt = 1, windHt = 2, groundAlbedo = 0.25,
+                      SurfEmissiv = 0.95, windSp = 2, forest = 0, startingSnowDepth_m = 0,
+                      startingSnowDensity_kg_m3=450)
+# Note that the -3 in the above 
+detach(TMWB)
+TMWB$SNO=SNO_Energy$SnowWaterEq_mm
+plot(TMWB$date,TMWB$SNO)
+TMWB$SNOmlt=SNO_Energy$SnowMelt_mm
+plot(TMWB$date,TMWB$SNOmlt)
+
+attach(TMWB)
+TMWB$Albedo=.23
+TMWB$Albedo[TMWB$SNO>0]=.95
+PET=PET_fromTemp(Jday=(1+as.POSIXlt(date)$yday),Tmax_C = MaxTemp,Tmin_C = MinTemp,lat_radians = myflowgage$declat*pi/180) * 1000
+TMWB$PET=PET
+detach(TMWB)
+
+TMWB$AWC=(0.45-0.15)*1000 #Fld Cap = .45, Wilt Pt = .15, z=1000mm
+# Oh, this we want to vary some of these around our watershed!
+TMWB$dP = 0 # Initializing Net Precipitation
+TMWB$ET = 0 # Initializing ET
+TMWB$AW = 0 # Initializing AW
+TMWB$Excess = 0 # Initializing Excess
+
+# Loop to calculate AW and Excess
+attach(TMWB)
+for (t in 2:length(AW)){
+  # This is where ET and Net Precipitation is now calculated
+    ET[t] = min (AW[t-1],PET[t])
+    ET[t] = (AW[t-1]/AWC[t-1])*PET[t] # New Model
+     if(AvgTemp[t] >= SFTmp[t]){
+        dP[t] = P[t] - ET[t] + SNOmlt[t]
+      }  else {
+          dP[t] = ET[t]
+        }
+  # From here onward, everything is the same as Week2’s lab
+   if (dP[t]<=0) {
+    values<-soildrying(AW[t-1],dP[t],AWC[t])
+  } else if((dP[t]>0) & (AW[t-1]+dP[t])<=AWC[t]) {
+    values<-soilwetting(AW[t-1],dP[t],AWC[t])
+  } else {
+    values<-soil_wetting_above_capacity(AW[t-1],dP[t],AWC[t])
+  }
+  AW[t]<-values[1]
+  Excess[t]<-values[2]
+  print(t)
+}
+TMWB$AW=AW
+TMWB$Excess=Excess
+# TMWB$dP=Excess  # This was in error originally
+TMWB$dP=dP
+TMWB$ET=ET
+detach(TMWB) # IMPORTANT TO DETACH
+
+# Create an aligned modeldata data frame to build our model in
+modeldata=merge(WXData,myflowgage$flowdata,by.x="date",by.y="mdate")
+summary(modeldata)  #
+modeldata$MaxTemp=modeldata$tmax/10 # Converting to C
+modeldata$MinTemp=modeldata$tmin/10 # Converting to C
+modeldata$P=modeldata$prcp/10 # Converting to mm
+# View(modeldata)  
+# Compare your precipitation to the flow out of your basin
+modeldata$P[is.na(modeldata$P)]=0
+modeldata$MinTemp[is.na(modeldata$MinTemp)]=0
+modeldata$MaxTemp[is.na(modeldata$MaxTemp)]=
+  modeldata$MinTemp[is.na(modeldata$MaxTemp)] +1
+modeldata$MaxTemp[modeldata$MaxTemp<=modeldata$MinTemp]=
+  modeldata$MinTemp[modeldata$MaxTemp<=modeldata$MinTemp]+1
+modeldata$AvgTemp=(modeldata$MaxTemp+modeldata$MinTemp)/2.0
+
+
+modeldata[is.na(modeldata)]=0 # A Quick BUT sloppy removal of NAs
+TMWB=modeldata
+
+# Calibrating the parameters one at a time
+for (fcres in seq(.1,.5,.1)){
+  TMWBnew=TMWBmodel(TMWB=TMWB,fcres=fcres)
+  print(paste(fcres,NSE(TMWBnew$Qmm,TMWBnew$Qpred)))
+}
+# fcres=.3 is the highest NSE
+for (SFTmp in seq(-5,20)){
+  TMWBnew=TMWBmodel(TMWB=TMWB,fcres=.3,SFTmp = SFTmp)
+  print(paste(SFTmp,NSE(TMWBnew$Qmm,TMWBnew$Qpred)))
+}
+for(AWCval in seq(50,700,25)){
+  TMWBnew=TMWBmodel(TMWB=TMWB,fcres=.3,SFTmp = 11,Tlag = .5,AWCval = AWCval)
+  print(paste(AWCval,NSE(TMWBnew$Qmm,TMWBnew$Qpred)))
+}
+# Best result for "MISSION CREEK NEAR TULALIP, WA" NSE = .34 . 
+TMWBnew=TMWBmodel(TMWB=TMWB,fcres=.3,SFTmp = 11,Tlag = .5,AWCval = 350)
+print(paste(AWCval,NSE(TMWBnew$Qmm,TMWBnew$Qpred)))
+
+#Setting up Slope Data for modelling
+TopSlope=TMWBmodel(TMWB=TMWBnew,AWCval = 350,Slope = 15)
+
+MidSlope=TopSlope
+MidSlope$P=(MidSlope$P+MidSlope$Excess)
+MidSlope=TMWBmodel(TMWB=MidSlope,AWCval=100 ,Slope=25)
+
+BotSlope=MidSlope
+BotSlope$P=(BotSlope$P+BotSlope$Excess)
+BotSlope=TMWBmodel(TMWB=BotSlope,AWCval=100 ,Slope=5)
+
+#Plot of Available Water
+ggplot()+
+  geom_line(data=TopSlope,aes(x=date, y=AW, colour ="TopSlope 15%"), size=1.5) +
+  geom_line(data=MidSlope,aes(x=date, y=AW, colour ="MidSlope 25%"), size=1) +
+  geom_line(data=BotSlope,aes(x=date, y=AW, colour ="BotSlope 5%"), size=0.5) +
+  scale_y_continuous(name = "AW (mm)",) +
+  scale_x_continuous(name = "Date")+
+  ggtitle(myflowgage$gagename)
+
+#Plot of Excess Water 
+ggplot()+
+  geom_line(data=TopSlope,aes(x=date, y=Excess, colour ="TopSlope 15%"), size=1) +
+  geom_line(data=MidSlope,aes(x=date, y=Excess, colour ="MidSlope 25%"), size=1) +
+  geom_line(data=BotSlope,aes(x=date, y=Excess, colour ="BotSlope 5%"), size=1)+
+  scale_y_continuous(name = "Excess (mm)",) +
+  scale_x_continuous(name = "Date")
