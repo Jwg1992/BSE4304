@@ -90,11 +90,11 @@ package.skeleton("BSEHydroModels",list=c("soil_wetting_above_capacity",
 # Last weeks basics, Having issues on RStudio.cloud, fewer issues 
 # on home machines. Leaving here for context, but we will address the 
 # workarounds in the WS Delineation Lab. 
-url="https://prd-tnm.s3.amazonaws.com/StagedProducts/Hydrography/NHD/HU8/HighResolution/Shape/NHD_H_03010101_HU8_Shape.zip"
-download.file(url,"NHD_H_03010101_HU8_Shape.zip")
-unzip("NHD_H_03010101_HU8_Shape.zip",exdir="03010101")
-streams=readOGR("03010101/Shape/NHDFlowline.dbf")
-mystream=subset(streams,gnis_id=="01478950")
+url="https://prd-tnm.s3.amazonaws.com/StagedProducts/Hydrography/NHD/HU8/HighResolution/Shape/NHD_H_05100101_HU8_Shape.zip"
+download.file(url,"NHD_H_05100101_HU8_Shape.zip")
+unzip("NHD_H_05100101_HU8_Shape.zip",exdir="05100101")
+streams=readOGR("05100101/Shape/NHDFlowline.dbf")
+mystream=subset(streams,gnis_name=="Banklick Creek")
 mybbox=c(mystream@bbox)
 mysoil = mapunit_geom_by_ll_bbox(mybbox)
 mukey_statement = format_SQL_in_statement(unique(mysoil$mukey))
@@ -235,35 +235,131 @@ BotSlopeCN = CNmodel(CNmodeldf = BotSlopeCN, CNavg = 60,fnc_slope=0,
 
 
 #AW Plots HW1
-plot(BotSlopeCN$date,BotSlopeCN$AW,type="l",col=1,xlab="Date",ylab="AW (mm)")
-lines(MidSlopeCN$date,MidSlopeCN$AW,type="l",col=2)
-lines(TopSlopeCN$date,TopSlopeCN$AW,type="l",col=3)
+
+p1<- ggplot()+
+  geom_line(data=TopSlopeCN,aes(x=date,y=AW,colour="Topslope"))+
+  geom_line(data=MidSlopeCN,aes(x=date,y=AW,colour="Midslope"))+
+  geom_line(data=BotSlopeCN,aes(x=date,y=AW,colour="Botslope"))+
+  scale_color_manual("",
+                     breaks = c("Botslope", "Midslope", "Topslope"),
+                     values = c("black", "blue","red"))+
+  ggtitle("Banklick Creek AW")
+
 # Excess Plots HW1
-plot(BotSlopeCN$date,BotSlopeCN$Excess,type="l",col=1,xlab="Date",ylab="Excess (mm)")
-lines(MidSlopeCN$date,MidSlopeCN$Excess,type="l",col=2)
-lines(TopSlopeCN$date,TopSlopeCN$Excess,type="l",col=3)
+p2<- ggplot()+
+  geom_line(data=TopSlopeCN,aes(x=date,y=Excess,colour="Topslope"))+
+  geom_line(data=MidSlopeCN,aes(x=date,y=Excess,colour="Midslope"))+
+  geom_line(data=BotSlopeCN,aes(x=date,y=Excess,colour="Botslope"))+
+  scale_color_manual("",
+                     breaks = c("Botslope", "Midslope", "Topslope"),
+                     values = c("black", "blue","red"))+
+  ggtitle("Banklick Creek Excess")
+
+p1 + p2 + plot_layout(ncol = 1, widths = c(1, 1))
 
 # PET and ET HW2
-plot(BotSlopeCN$date,BotSlopeCN$PET,type="l",col=1,xlab="Date",ylab="(P)ET (mm)")
-lines(BotSlopeCN$date,BotSlopeCN$ET,type="l",col=2)
-lines(MidSlopeCN$date,MidSlopeCN$ET,type="l",col=3)
-lines(TopSlopeCN$date,TopSlopeCN$ET,type="l",col=4)
+p3<- ggplot()+
+  geom_line(data=TopSlopeCN,aes(x=date,y=ET,colour="ET1"))+
+  geom_line(data=MidSlopeCN,aes(x=date,y=ET,colour="ET2"))+
+  geom_line(data=BotSlopeCN,aes(x=date,y=ET,colour="ET3"))+
+  geom_line(data=BotSlopeCN,aes(x=date,y=PET,colour="PET"))+
+  scale_color_manual("",
+                     breaks = c("ET1", "ET2", "ET3", "PET"),
+                     values = c("red", "blue", "green", "black"))+
+  ggtitle("Banklick Creek PET and ET")
+  
 # or as cumulative summations
-plot(TopSlopeCN$date,cumsum(BotSlopeCN$PET),type="l",
-     xlab="Date",ylab="(P)ET")
-lines(TopSlopeCN$date,cumsum(TopSlopeCN$ET),col="red")
-lines(MidSlopeCN$date,cumsum(MidSlopeCN$ET),col="green")
-lines(BotSlopeCN$date,cumsum(BotSlopeCN$ET),col="blue")
 
-
+p4<- ggplot()+
+  geom_line(data=BotSlopeCN,aes(x=date,y=cumsum(PET),colour="PET"))+
+  geom_line(data=TopSlopeCN,aes(x=date,y=cumsum(ET),colour="ET1"))+
+  geom_line(data=MidSlopeCN,aes(x=date,y=cumsum(ET),colour="ET2"))+
+  geom_line(data=BotSlopeCN,aes(x=date,y=cumsum(ET),colour="ET3"))+
+  scale_color_manual("",
+                     breaks = c("PET", "ET1", "ET2", "ET3"),
+                     values = c("black", "blue","red", "green"))+
+  ggtitle("BankLick Cumulative PET & ET")
+  
 # Cumulative Summary of QPred is very informative
-plot(BotSlopeCN$date,cumsum(BotSlopeCN$Qpred),type="l",
-     xlab="Date",ylab="Flow Q Cumulative Summary (mm)")
-lines(MidSlopeCN$date,cumsum(MidSlopeCN$Qpred),col="red")
-lines(TopSlopeCN$date,cumsum(TopSlopeCN$Qpred),col="green")
+p5<- ggplot()+
+  geom_line(data=TopSlopeCN,aes(x=date,y=cumsum(Qpred),colour="Topslope"))+
+  geom_line(data=MidSlopeCN,aes(x=date,y=cumsum(Qpred),colour="Midslope"))+
+  geom_line(data=BotSlopeCN,aes(x=date,y=cumsum(Qpred),colour="Botslope"))+
+  scale_color_manual("",
+                     breaks = c("Topslope", "Midslope", "Botslope"),
+                     values = c("black", "blue","red"))+
+  ggtitle("Banklick Creek Cumulative Qpred")
 
+p3 + p4 + p5 + plot_layout(ncol = 1, widths = c(2, 1))
 # Model Performance 
 plot(BotSlopeCN$date,BotSlopeCN$Qpred,type="l")
+
+NSeff(TopSlopeCN$Qmm,TopSlopeCN$Qpred)
+
+NSeff(MidSlopeCN$Qmm,MidSlopeCN$Qpred)
+
 NSeff(BotSlopeCN$Qmm,BotSlopeCN$Qpred)
 
+#Rebuiling Plots for TWMB
+p6<- ggplot()+
+  geom_line(data=TopSlope,aes(x=date,y=AW,colour="Topslope"))+
+  geom_line(data=MidSlope,aes(x=date,y=AW,colour="Midslope"))+
+  geom_line(data=BotSlope,aes(x=date,y=AW,colour="Botslope"))+
+  scale_color_manual("",
+                     breaks = c("Botslope", "Midslope", "Topslope"),
+                     values = c("black", "blue","red"))+
+  ggtitle("Banklick Creek AW")
+
+# Excess Plots 
+p7<- ggplot()+
+  geom_line(data=TopSlope,aes(x=date,y=Excess,colour="Topslope"))+
+  geom_line(data=MidSlope,aes(x=date,y=Excess,colour="Midslope"))+
+  geom_line(data=BotSlope,aes(x=date,y=Excess,colour="Botslope"))+
+  scale_color_manual("",
+                     breaks = c("Botslope", "Midslope", "Topslope"),
+                     values = c("black", "blue","red"))+
+  ggtitle("Banklick Creek Excess")
+
+p6 + p7 + plot_layout(ncol = 1, widths = c(1, 1))
+
+# PET and ET HW2
+p8<- ggplot()+
+  geom_line(data=TopSlope,aes(x=date,y=ET,colour="ET1"))+
+  geom_line(data=MidSlope,aes(x=date,y=ET,colour="ET2"))+
+  geom_line(data=BotSlope,aes(x=date,y=ET,colour="ET3"))+
+  geom_line(data=BotSlope,aes(x=date,y=PET,colour="PET"))+
+  scale_color_manual("",
+                     breaks = c("ET1", "ET2", "ET3", "PET"),
+                     values = c("red", "blue", "green", "black"))+
+  ggtitle("Banklick Creek PET and ET")
+
+# or as cumulative summations
+
+p9<- ggplot()+
+  geom_line(data=BotSlope,aes(x=date,y=cumsum(PET),colour="PET"))+
+  geom_line(data=TopSlope,aes(x=date,y=cumsum(ET),colour="ET1"))+
+  geom_line(data=MidSlope,aes(x=date,y=cumsum(ET),colour="ET2"))+
+  geom_line(data=BotSlope,aes(x=date,y=cumsum(ET),colour="ET3"))+
+  scale_color_manual("",
+                     breaks = c("PET", "ET1", "ET2", "ET3"),
+                     values = c("black", "blue","red", "green"))+
+  ggtitle("Banklick Creek Cumulative PET & ET")
+
+# Cumulative Summary of QPred is very informative
+p10<- ggplot()+
+  geom_line(data=TopSlope,aes(x=date,y=cumsum(Qpred),colour="Topslope"))+
+  geom_line(data=MidSlope,aes(x=date,y=cumsum(Qpred),colour="Midslope"))+
+  geom_line(data=BotSlope,aes(x=date,y=cumsum(Qpred),colour="Botslope"))+
+  scale_color_manual("",
+                     breaks = c("Topslope", "Midslope", "Botslope"),
+                     values = c("black", "blue","red"))+
+  ggtitle("Banklick Creek Cumulative Qpred")
+
+p8 + p9 + p10 + plot_layout(ncol = 1, widths = c(2, 1))
+
+NSeff(TopSlope$Qmm,TopSlope$Qpred)
+
+NSeff(MidSlope$Qmm,MidSlope$Qpred)
+
+NSeff(BotSlope$Qmm,BotSlope$Qpred)
 # finish building all the hillslope HRUs….
